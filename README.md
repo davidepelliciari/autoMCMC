@@ -1,2 +1,2 @@
-# autoMCMC
+# aMCMC
 automatic MCMC fitter
