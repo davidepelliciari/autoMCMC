@@ -2,30 +2,31 @@ dataset:
   path: ""  # Path to existing dataset or empty for synthetic dataset (expected structure: 0: x, 1: y, 2: yerr)
 
 synthetic_dataset:
-  generative_function: "A * x + B * log(x) ** 2"  # function to generate y values
-  xmin: 0.1
-  xmax: 10.0
-  num_points: 30  # Number of points for synthetic dataset
+  generative_function: "F_0*(x/1.2)**(-alfa)"  # function to generate y values
+  xmin: 1.0
+  xmax: 5.0
+  num_points: 5  # Number of points for synthetic dataset
   x_distribution: 'linear'   # select how the x vaues will be distributed ('linear': np.linspace(xmin,xmax,num_points); 'log': logspace)
-  noise_level: 2.0  # Noise level for synthetic dataset
-  default_yerr: 12.0  # Default error on y for synthetic dataset
+  noise_level: 10.0  # Noise level for synthetic dataset
+  default_yerr: 36.0  # Default error on y for synthetic dataset
 
 dataset_parameters:  ## add as many parameters as you like (but remember to be consistent with the generative function symbols)
-  A: 1.0
-  B: 2.0
+  F_0: 240.0
+  alfa: 2.0
 
 model:
   type: "custom"
-  function: "A * x + B * log(x) ** 2"  # Your custom function as a string
+  function: "F_0*(x/1.2)**(-alfa)"  # Your custom function as a string
 
 model_parameters:       # initial guess for parameters
-  A: 2.0
-  B: 5.0
+  F_0: 240.0
+  alfa: 2.0
 
 prior_ranges:
-  - [-10.0, 10.0]  # Prior range for A
+  - [0., 1000.]  # Prior range for A
   - [-10.0, 10.0]  # Prior range for B
 
 nwalkers: 32  # Number of walkers for MCMC
-steps: 1000  # Number of steps for MCMC
+steps: 2000  # Number of steps for MCMC
 burnin: 250  # Number of MCMC steps to discard at the begninning of the chains
+plotting: 'loglog'
