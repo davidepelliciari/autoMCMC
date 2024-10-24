@@ -20,16 +20,18 @@ def getSyntheticDataset(config):
     print("## Using ", func_data_str, " as generative function..")
     data_params = config['dataset_parameters']
     param_values = [data_params[key] for key in sorted(data_params.keys())]
+    print("## Parameter used: ")
+    print(data_params)
     data_func = create_function_from_string(func_data_str, data_params)
     noise_level = config['synthetic_dataset']['noise_level']
     yerr = config['synthetic_dataset']['default_yerr']
 
     if x_dist == 'linear' or x_dist == '':
         x = np.linspace(xmin, xmax, npoints)
-    elif x_dist == 'log':
+    elif x_dist == 'log' or x_dist == 'logspace':
         x = np.logspace(xmin, xmax, npoints)
 
-    y = data_func(x, *param_values)
+    y = data_func(x, *param_values) + np.random.normal(0, noise_level, npoints)
     yerr = np.ones_like(y) * yerr
 
     with open("./dataset.txt", "w") as file:
@@ -46,7 +48,7 @@ def getSyntheticDataset(config):
 def create_function_from_string(func_str, params):
     x = sp.symbols('x')
     param_symbols = {param: sp.symbols(param) for param in params}
-    func = eval(func_str, {"x": x, "sin": sp.sin, "log": sp.log, **param_symbols})
+    func = eval(func_str, {"x": x, "cos": sp.cos, "sin": sp.sin, "log": sp.log, **param_symbols})
 
     def fit_func(x_val, *param_values):
         param_dict = dict(zip(param_symbols.values(), param_values))
@@ -64,7 +66,7 @@ def log_likelihood(theta, x, y, func, yerr):
 
 ## --------------------------------------------------------------------------------------------------------------------------------------- ##
 
-# log-prior function used in MCMC fitting
+# log-prior function used in MCMC fittinfg
 def log_prior(theta, prior_ranges):
     for i, (low, high) in enumerate(prior_ranges):
         if not (low < theta[i] < high):
@@ -125,42 +127,68 @@ def get_best_fit_params(sampler,discard):
 ## --------------------------------------------------------------------------------------------------------------------------------------- ##
 
 # Simple plot
-def plotDataset(x,y,yerr):
+def plotDataset(x,y,yerr,plotting):
 
+    print("plotting: ", plotting)
     plt.title("Considered dataset")
     plt.errorbar(x, y, yerr=yerr, fmt='o', capsize=5, color='gray')
     plt.xlabel("x")
     plt.ylabel("y")
+    
+    if plotting == 'log' or plotting == 'loglog':
+        plt.xscale('log')
+        if plotting == 'loglog':
+            plt.yscale('log')
+
     plt.show()
 
 ## --------------------------------------------------------------------------------------------------------------------------------------- ##
 
-# function that plots the dataset and models from MCMC
-def plot_dataset_and_fit(x, y, fit_func, best_fit_params, param_errors, param_names, yerr=None):
+# function that plots the dataset and models from MCMC, with residuals in the lower panel
+def plot_dataset_and_fit(x, y, fit_func, best_fit_params, param_errors, param_names, yerr, plotting):
 
     nmodels = 50
-    delta = np.abs(np.max(x)-np.min(x))
-    x_fit = np.linspace(np.min(x)-0.1*delta, np.max(x)+0.1*delta, 200)
+    delta = np.abs(np.max(x) - np.min(x))
+    #x_fit = np.linspace(np.min(x) - 0.1 * delta, np.max(x) + 0.1 * delta, 200)
+    x_fit = np.linspace(np.min(x), np.max(x), 200)
     y_fit = fit_func(x_fit, *best_fit_params)
 
-    plt.plot(x_fit, y_fit, label="Best-fit model", color='firebrick', lw=2)
-
+    # Create a figure with two subplots (upper: data & fit, lower: residuals)
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 8), gridspec_kw={'height_ratios': [3, 1]})
+    
+    # Upper plot: dataset and model
+    ax1.plot(x_fit, y_fit, label="Best-fit model", color='firebrick', lw=2)
     for i in range(nmodels):
         # Estrai parametri campionati dalla distribuzione normale (best-fit ± errori)
         sampled_params = np.random.normal(best_fit_params, param_errors)
         # Calcola la funzione con i parametri campionati
         y_fit_sampled = fit_func(x_fit, *sampled_params)
         # Plotta il modello campionato
-        plt.plot(x_fit, y_fit_sampled, color='orange', alpha=0.1, lw=1)
+        ax1.plot(x_fit, y_fit_sampled, color='orange', alpha=0.1, lw=1)
 
-    plt.errorbar(x, y, yerr=yerr, fmt='o', label="Data", capsize=5, color='gray')
-    plt.xlabel("x")
-    plt.ylabel("y")
-    plt.xlim(np.min(x)-0.1*delta, np.max(x)+0.1*delta)
-    #plt.xscale('log')
-    #plt.yscale('log')
-    plt.legend()
+    ax1.errorbar(x, y, yerr=yerr, fmt='o', label="Data", capsize=5, color='gray')
+    ax1.set_xlabel("x", fontsize=18)
+    ax1.set_ylabel("y", fontsize=18)
+    #ax1.set_xlim(np.min(x) - 0.1 * delta, np.max(x) + 0.1 * delta)
+    ax1.legend(fontsize=18)
+
+    # Lower plot: residuals
+    y_residuals = y - fit_func(x, *best_fit_params)
+    ax2.errorbar(x, y_residuals, yerr=yerr, fmt='o', capsize=5, color='gray')
+    ax2.axhline(0, color='black', lw=1, linestyle='--')
+    ax2.set_xlabel("x", fontsize=18)
+    ax2.set_ylabel("Residuals", fontsize=18)
+    #ax2.set_xlim(np.min(x) - 0.1 * delta, np.max(x) + 0.1 * delta)
+
+    if plotting == 'log' or plotting == 'loglog':
+        ax1.set_xscale('log')
+        ax2.set_xscale('log')
+        if plotting == 'loglog':
+            ax1.set_yscale('log')
+
+    plt.tight_layout()
     plt.show()
+
 
 ## --------------------------------------------------------------------------------------------------------------------------------------- ##
 
@@ -176,22 +204,27 @@ def main(config_file):
         x, y = data[:, 0], data[:, 1]
         yerr = data[:, 2] if data.shape[1] > 2 else np.ones_like(y) * config['synthetic_dataset']['default_yerr']
     else:
+        print("## External dataset not found, creating a synthetic one..")
         x, y, yerr = getSyntheticDataset(config)
 
+    plotting = config['plotting']
     # show the dataset before fitting
-    plotDataset(x,y,yerr)
+    plotDataset(x,y,yerr, plotting)
 
     # define the fitting function
     if config['model']['type'] == 'custom':
         func_str = config['model']['function']
         params = config['model_parameters']
+        print("## Using ", func_str, " as the fitting function for MCMC..")
+        print("## Model parameters: ")
+        print(params)
         fit_func = create_function_from_string(func_str, params)
     else:
         raise ValueError("## Only custom functions are implemented up to now..")
 
     # extract parameters from configuration file
     initial_params = list(config['model_parameters'].values())
-    prior_ranges = config['prior_ranges']  # Assume che il file di configurazione contenga i range dei prior
+    prior_ranges = config['prior_ranges']
     nsteps_chains = config['steps']
     burnin = config['burnin']
     nwalkers = config['nwalkers']
@@ -211,10 +244,10 @@ def main(config_file):
     print(f"Parameter uncertainties: {param_errors}")
 
     # Plot the best-fit model on top of dataset
-    plot_dataset_and_fit(x, y, fit_func, best_fit_params, param_errors, list(config['model_parameters'].keys()), yerr)
+    plot_dataset_and_fit(x, y, fit_func, best_fit_params, param_errors, list(config['model_parameters'].keys()), yerr, plotting)
 
 
 ## --------------------------------------------------------------------------------------------------------------------------------------- ##
 
 if __name__ == "__main__":
-    main("./config.yaml")
+    main("./config/config.yaml")
